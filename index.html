@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>Meme Generator</title>
+<style>
+  #preview {
+    max-width: 500px;
+    border: 2px solid black;
+    cursor: crosshair;
+  }
+</style>
+</head>
+<body>
+
+<h2>Meme Generator</h2>
+
+<input type="file" id="imageInput" accept="image/*"><br><br>
+
+<img id="preview" style="display:none;" />
+
+<p>Clicked Position: <span id="pos"></span></p>
+
+<input type="text" id="textInput" placeholder="Enter meme text"><br><br>
+
+<button id="submitBtn">Generate Meme</button>
+
+<hr>
+
+
+<h3>Generated Meme:</h3>
+<img id="output" style="max-width:500px; display:none;" />
+
+<br><br>
+<button id="downloadBtn" style="display:none;">Download Meme</button>
+
+<script>
+let clickX = 0, clickY = 0;
+const img = document.getElementById("preview");
+
+document.getElementById("imageInput").addEventListener("change", function(e){
+    const file = e.target.files[0];
+    img.src = URL.createObjectURL(file);
+    img.style.display = "block";
+});
+
+// Capture click coordinates
+img.addEventListener("click", function(event){
+    const rect = img.getBoundingClientRect();
+
+    const scaleX = img.naturalWidth / rect.width;
+    const scaleY = img.naturalHeight / rect.height;
+
+    clickX = (event.clientX - rect.left) * scaleX;
+    clickY = (event.clientY - rect.top) * scaleY;
+
+    document.getElementById("pos").innerText = `${clickX.toFixed(1)}, ${clickY.toFixed(1)}`;
+});
+
+// Send to server
+document.getElementById("submitBtn").addEventListener("click", async () => {
+    const text = document.getElementById("textInput").value;
+    const file = document.getElementById("imageInput").files[0];
+
+    const form = new FormData();
+    form.append("image", file);
+    form.append("text", text);
+    form.append("x", clickX);
+    form.append("y", clickY);
+
+    const res = await fetch("http://localhost/generate", {
+        method: "POST",
+        body: form
+    });
+
+    const blob = await res.blob();
+    const imgURL = URL.createObjectURL(blob);
+
+    const output = document.getElementById("output");
+    output.src = imgURL;
+    output.style.display = "block";
+
+    const downloadBtn = document.getElementById("downloadBtn");
+    downloadBtn.style.display = "inline-block";
+    downloadBtn.onclick = () => {
+        const a = document.createElement("a");
+        a.href = imgURL;
+        a.download = "meme.png";
+        a.click();
+    };
+});
+</script>
+
+
+</body>
+</html>
