@@ -1,95 +1,201 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
+<meta charset="UTF-8">
 <title>Meme Generator</title>
+
 <style>
-  #preview {
-    max-width: 500px;
+  body {
+    font-family: Comic Sans MS;
+    padding: 20px;
+  }
+
+  canvas {
     border: 2px solid black;
-    cursor: crosshair;
+    cursor: grab;
+    max-width: 100%;
+    display: block;
+    margin-top: 10px;
+  }
+
+  canvas:active {
+    cursor: grabbing;
+  }
+
+  input, button {
+    margin-top: 8px;
+    padding: 6px;
+  }
+
+  .controls {
+    margin-top: 10px;
   }
 </style>
 </head>
+
 <body>
 
 <h2>Meme Generator</h2>
 
-<input type="file" id="imageInput" accept="image/*"><br><br>
+<input type="file" id="imageInput" accept="image/*"><br>
 
-<img id="preview" style="display:none;" />
+<canvas id="canvas"></canvas>
 
-<p>Clicked Position: <span id="pos"></span></p>
-
-<input type="text" id="textInput" placeholder="Enter meme text"><br><br>
-
-<button id="submitBtn">Generate Meme</button>
-
-<hr>
-
-
-<h3>Generated Meme:</h3>
-<img id="output" style="max-width:500px; display:none;" />
-
-<br><br>
-<button id="downloadBtn" style="display:none;">Download Meme</button>
+<div class="controls">
+  <input type="text" id="textInput" placeholder="Enter meme text">
+  <br>
+  Font size:
+  <input type="range" id="fontSize" min="20" max="100" value="40">
+  <br>
+  <button id="addTextBtn">Add / Update Text</button>
+  <button id="downloadBtn" style="display:none;">Download Meme</button>
+</div>
 
 <script>
-let clickX = 0, clickY = 0;
-const img = document.getElementById("preview");
+const canvas = document.getElementById("canvas");
+const ctx = canvas.getContext("2d");
+const imageInput = document.getElementById("imageInput");
+const textInput = document.getElementById("textInput");
+const fontSizeInput = document.getElementById("fontSize");
+const addTextBtn = document.getElementById("addTextBtn");
+const downloadBtn = document.getElementById("downloadBtn");
 
-document.getElementById("imageInput").addEventListener("change", function(e){
-    const file = e.target.files[0];
-    img.src = URL.createObjectURL(file);
-    img.style.display = "block";
+let img = new Image();
+
+// Text object
+let textLayer = {
+  text: "",
+  x: 50,
+  y: 50,
+  fontSize: 40,
+  dragging: false
+};
+
+let offsetX = 0;
+let offsetY = 0;
+
+/* Load image */
+imageInput.addEventListener("change", e => {
+  const file = e.target.files[0];
+  if (!file) return;
+
+  img.src = URL.createObjectURL(file);
+  img.onload = () => {
+    canvas.width = img.width;
+    canvas.height = img.height;
+    redraw();
+  };
 });
 
-// Capture click coordinates
-img.addEventListener("click", function(event){
-    const rect = img.getBoundingClientRect();
-
-    const scaleX = img.naturalWidth / rect.width;
-    const scaleY = img.naturalHeight / rect.height;
-
-    clickX = (event.clientX - rect.left) * scaleX;
-    clickY = (event.clientY - rect.top) * scaleY;
-
-    document.getElementById("pos").innerText = `${clickX.toFixed(1)}, ${clickY.toFixed(1)}`;
+/* Add / update text */
+addTextBtn.addEventListener("click", () => {
+  textLayer.text = textInput.value;
+  textLayer.fontSize = fontSizeInput.value;
+  redraw();
+  downloadBtn.style.display = "inline-block";
 });
 
-// Send to server
-document.getElementById("submitBtn").addEventListener("click", async () => {
-    const text = document.getElementById("textInput").value;
-    const file = document.getElementById("imageInput").files[0];
+/* Mouse down (select text) */
+canvas.addEventListener("mousedown", e => {
+  const mouse = getMousePos(e);
+  if (isInsideText(mouse.x, mouse.y)) {
+    textLayer.dragging = true;
+    offsetX = mouse.x - textLayer.x;
+    offsetY = mouse.y - textLayer.y;
+  }
+});
 
-    const form = new FormData();
-    form.append("image", file);
-    form.append("text", text);
-    form.append("x", clickX);
-    form.append("y", clickY);
+/* Mouse move (drag) */
+canvas.addEventListener("mousemove", e => {
+  if (textLayer.dragging) {
+    const mouse = getMousePos(e);
+    textLayer.x = mouse.x - offsetX;
+    textLayer.y = mouse.y - offsetY;
+    redraw();
+  }
+});
 
-    const res = await fetch("http://localhost/generate", {
-        method: "POST",
-        body: form
-    });
+/* Mouse up */
+canvas.addEventListener("mouseup", () => {
+  textLayer.dragging = false;
+});
 
-    const blob = await res.blob();
-    const imgURL = URL.createObjectURL(blob);
+/* Redraw everything */
+function redraw() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.drawImage(img, 0, 0);
+  drawTextWrapped();
+}
 
-    const output = document.getElementById("output");
-    output.src = imgURL;
-    output.style.display = "block";
+/* Draw wrapped text */
+function drawTextWrapped() {
+  if (!textLayer.text) return;
 
-    const downloadBtn = document.getElementById("downloadBtn");
-    downloadBtn.style.display = "inline-block";
-    downloadBtn.onclick = () => {
-        const a = document.createElement("a");
-        a.href = imgURL;
-        a.download = "meme.png";
-        a.click();
-    };
+  ctx.font = `bold ${textLayer.fontSize}px Impact`;
+  ctx.fillStyle = "white";
+  ctx.strokeStyle = "black";
+  ctx.lineWidth = 3;
+  ctx.textBaseline = "top";
+
+  const maxWidth = canvas.width - textLayer.x - 20;
+  const lineHeight = textLayer.fontSize * 1.2;
+
+  const words = textLayer.text.split(" ");
+  let line = "";
+  let y = textLayer.y;
+
+  for (let i = 0; i < words.length; i++) {
+    const testLine = line + words[i] + " ";
+    const metrics = ctx.measureText(testLine);
+    if (metrics.width > maxWidth && i > 0) {
+      ctx.fillText(line, textLayer.x, y);
+      ctx.strokeText(line, textLayer.x, y);
+      line = words[i] + " ";
+      y += lineHeight;
+    } else {
+      line = testLine;
+    }
+  }
+
+  ctx.fillText(line, textLayer.x, y);
+  ctx.strokeText(line, textLayer.x, y);
+}
+
+/* Check if mouse is over text */
+function isInsideText(mx, my) {
+  ctx.font = `bold ${textLayer.fontSize}px Impact`;
+  const width = ctx.measureText(textLayer.text).width;
+  const height = textLayer.fontSize * 1.2;
+
+  return (
+    mx >= textLayer.x &&
+    mx <= textLayer.x + width &&
+    my >= textLayer.y &&
+    my <= textLayer.y + height
+  );
+}
+
+/* Mouse position */
+function getMousePos(e) {
+  const rect = canvas.getBoundingClientRect();
+  return {
+    x: (e.clientX - rect.left) * (canvas.width / rect.width),
+    y: (e.clientY - rect.top) * (canvas.height / rect.height)
+  };
+}
+
+/* Download */
+downloadBtn.addEventListener("click", () => {
+  canvas.toBlob(blob => {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "meme.png";
+    a.click();
+    URL.revokeObjectURL(url);
+  });
 });
 </script>
-
 
 </body>
 </html>
